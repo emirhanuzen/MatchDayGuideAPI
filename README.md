@@ -185,18 +185,16 @@ Bu rozetleri isterseniz GitHub üzerinde README başlığı altına ekleyebilirs
 
 Bu bölümde proje arayüzünden aldığınız ekran görüntülerini paylaşabilirsiniz.
 
-```markdown
 ![Ekran Görüntüsü 1](screenshot.png)
+![Ekran Görüntüsü 2](2.png)
 
-
-
-
+---
 
 ## Geliştirme Fikirleri
 
 - Birden fazla stadyum desteği ve stadyum seçme arayüzü,
-+- Gerçek zamanlı doluluk güncellemesi (ör. WebSocket veya periyodik API çağrıları),
- - Kullanıcı konumunu tarayıcı üzerinden otomatik alma (Geolocation API),
- - VIP kullanıcılar için farklı rota / önceliklendirme algoritması,
- - Farklı lig ve takımlar için tema desteği (renk, logo, harita katmanları).
+- Gerçek zamanlı doluluk güncellemesi (ör. WebSocket veya periyodik API çağrıları),
+- Kullanıcı konumunu tarayıcı üzerinden otomatik alma (Geolocation API),
+- VIP kullanıcılar için farklı rota / önceliklendirme algoritması,
+- Farklı lig ve takımlar için tema desteği (renk, logo, harita katmanları).
 
