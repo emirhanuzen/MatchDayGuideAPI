@@ -2,8 +2,53 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 import sqlite3
 from fastapi.middleware.cors import CORSMiddleware
-
+from datetime import datetime, timedelta
+from typing import Union
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 app = FastAPI()
+# --- GÜVENLİK AYARLARI ---
+SECRET_KEY = "cok-gizli-bir-anahtar-buraya-rastgele-yazi-yaz" # Bunu kimse bilmemeli
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# --- YARDIMCI FONKSİYONLAR ---
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# --- KULLANICIYI DOĞRULA (Bağımlılık) ---
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Giriş yapılamadı / Token geçersiz",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    return username
 
 # --- İZİNLER (CORS) ---
 app.add_middleware(
@@ -13,7 +58,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+# --- MODELLER ---
+class UserCreate(BaseModel):
+    username: str
+    password: str
 
 # --- MODELLER (Veri Kalıpları) ---
 class Stadium(BaseModel):
@@ -57,6 +105,21 @@ def init_db():
                   REAL
               )
               """)
+    c.execute("""
+              CREATE TABLE IF NOT EXISTS users
+              (
+                  id
+                  INTEGER
+                  PRIMARY
+                  KEY
+                  AUTOINCREMENT,
+                  username
+                  TEXT
+                  UNIQUE,
+                  hashed_password
+                  TEXT
+              )
+              """)
 
     # 2. Tablo: MEKANLAR (GPS Destekli)
     c.execute("""
@@ -90,7 +153,137 @@ def init_db():
 # Uygulama başlarken tabloları kur (Eğer yoksa)
 init_db()
 
+# --- GÜVENLİK AYARLARI ---
+SECRET_KEY = "çokgizlisekretkey-bulamazlarbabaporşe-sürerbam" # Bunu kimse bilmemeli
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# --- YARDIMCI FONKSİYONLAR ---
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# --- KULLANICIYI DOĞRULA (Bağımlılık) ---
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Giriş yapılamadı / Token geçersiz",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    return username
+
+
+# --- 1. KAYIT OL (REGISTER) ---
+class UserCreate(BaseModel):
+    username: str
+    password: str
+
+
+# --- GİRİŞ YAP (LOGIN) ve TOKEN AL ---
+@app.post("/login")
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    # NOT: Bu "form_data", Swagger'daki o kilitli giriş kutusunu oluşturur.
+    # İçinde "form_data.username" ve "form_data.password" taşır.
+
+    # 1. Veritabanını Aç
+    conn = sqlite3.connect("database.db")
+    conn.row_factory = sqlite3.Row  # Sütun isimleriyle (user["username"] gibi) erişmek için
+    c = conn.cursor()
+
+    # 2. Kullanıcıyı Ara (RESEPSİYONİST BİLGİSAYARA BAKIYOR)
+    c.execute("SELECT * FROM users WHERE username = ?", (form_data.username,))
+    user = c.fetchone()
+    conn.close()
+
+    # 3. Kontrol Et (Kullanıcı yoksa VEYA şifre yanlışsa)
+    # verify_password: Bizim "Kıyma Makinesi" kontrolcüsü.
+    if not user or not verify_password(form_data.password, user["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kullanıcı adı veya şifre hatalı! (Hacker mısın?)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 4. Her şey doğruysa TOKEN (Bilet) Bas
+    # Token'ın geçerlilik süresini ayarlıyoruz (30 dk)
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    # Token'ı oluşturuyoruz (İçine kullanıcı adını gizliyoruz)
+    access_token = create_access_token(
+        data={"sub": user["username"]}, expires_delta=access_token_expires
+    )
+
+    # 5. Token'ı müşteriye ver
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/register")
+def register_user(user: UserCreate):
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+
+    # Şifreyi gizle (Hashle) - Asla düz kaydetme!
+    hashed_pw = get_password_hash(user.password)
+
+    try:
+        c.execute("INSERT INTO users (username, hashed_password) VALUES (?, ?)",
+                  (user.username, hashed_pw))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Bu kullanıcı adı zaten var!")
+
+    conn.close()
+    return {"mesaj": "Kullanıcı oluşturuldu! Şimdi giriş yapabilirsiniz."}
+
+
+# --- 2. GİRİŞ YAP (LOGIN) -> TOKEN AL ---
+@app.post("/token")
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    conn = sqlite3.connect("database.db")
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # Kullanıcıyı bul
+    c.execute("SELECT * FROM users WHERE username = ?", (form_data.username,))
+    user = c.fetchone()
+    conn.close()
+
+    # Kullanıcı yoksa veya şifre yanlışsa
+    if not user or not verify_password(form_data.password, user["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Kullanıcı adı veya şifre hatalı",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Her şey doğruysa TOKEN üret ver
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user["username"]}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 @app.get("/")
 def read_root():
     return {"Durum": "Global GPS Stadyum API Çalışıyor! 🌍"}
@@ -98,7 +291,7 @@ def read_root():
 
 # --- 1. ADIM: Stadyum Ekleme ---
 @app.post("/stadiumsCreate")
-def create_stadium(stadium: Stadium):
+def create_stadium(stadium: Stadium,current_user: str = Depends(get_current_user)):
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
     c.execute("INSERT INTO stadiums (name, city, lat, lon) VALUES (?, ?, ?, ?)",
@@ -111,7 +304,7 @@ def create_stadium(stadium: Stadium):
 
 # --- 2. ADIM: Mekan Ekleme ---
 @app.post("/locations/locationscreate")
-def create_location(location: Location):
+def create_location(location: Location,current_user: str = Depends(get_current_user)):
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
     c.execute("""
@@ -224,7 +417,7 @@ def get_full_map():
 
 # --- SİLME FONKSİYONLARI ---
 @app.delete("/locations/{location_id}")
-def delete_location(location_id: int):
+def delete_location(location_id: int,current_user: str = Depends(get_current_user)):
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
     c.execute("SELECT * FROM locations WHERE id = ?", (location_id,))
@@ -240,7 +433,7 @@ def delete_location(location_id: int):
 
 
 @app.delete("/stadiums/{stadium_id}")
-def delete_stadium(stadium_id: int):
+def delete_stadium(stadium_id: int,current_user: str = Depends(get_current_user)):
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
     c.execute("SELECT * FROM stadiums WHERE id = ?", (stadium_id,))
@@ -259,7 +452,7 @@ def delete_stadium(stadium_id: int):
 
 # --- GÜNCELLEME (UPDATE) ---
 @app.put("/locations/{location_id}")
-def update_location(location_id: int, location: Location):
+def update_location(location_id: int, location: Location,current_user: str = Depends(get_current_user)):
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
 
@@ -282,7 +475,7 @@ def update_location(location_id: int, location: Location):
 
 
 @app.put("/stadiums/{stadium_id}")
-def update_stadium(stadium_id: int, stadium: Stadium):
+def update_stadium(stadium_id: int, stadium: Stadium,current_user: str = Depends(get_current_user)):
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
     c.execute("UPDATE stadiums SET name = ?, city = ?, lat = ?, lon = ? WHERE id = ?",

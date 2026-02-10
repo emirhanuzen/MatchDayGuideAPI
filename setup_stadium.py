@@ -35,6 +35,26 @@ def setup_simulation():
                   is_vip     BOOLEAN
               )
               """)
+    # setup_stadium.py içine eklenecek kısım:
+
+    # ... Diğer tabloların (stadiums, locations) olduğu yere ekle:
+    c.execute("""
+              CREATE TABLE IF NOT EXISTS users
+              (
+                  id
+                  INTEGER
+                  PRIMARY
+                  KEY
+                  AUTOINCREMENT,
+                  username
+                  TEXT
+                  UNIQUE,
+                  hashed_password
+                  TEXT
+              )
+              """)
+
+    print("👤 Kullanıcı tablosu oluşturuldu.")
 
     print("🏟️ Stadyum Kuruluyor...")
     # Merkez: Emirates Stadyumu
