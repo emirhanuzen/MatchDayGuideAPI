@@ -186,13 +186,11 @@ Bu rozetleri isterseniz GitHub üzerinde README başlığı altına ekleyebilirs
 Bu bölümde proje arayüzünden aldığınız ekran görüntülerini paylaşabilirsiniz.
 
 ```markdown
-![Ekran Görüntüsü 1](image_path_1.png)
-![Ekran Görüntüsü 2](image_path_2.png)
-```
+![Ekran Görüntüsü 1](screenshot.png)
 
-> Öneri: `screenshot.png.png` dosyasını veya yeni alacağınız görselleri `screenshots/` klasörüne koyup buradan referans verebilirsiniz.
 
----
+
+
 
 ## Geliştirme Fikirleri
 
