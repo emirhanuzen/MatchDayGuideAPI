@@ -1,485 +1,303 @@
-from fastapi import FastAPI
-from pydantic import BaseModel, Field
-import sqlite3
-from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timedelta
-from typing import Union
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
+# main.py (EN TEPE KISMI - BURAYI GÜNCELLE)
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm # <--- BU EKSİKTİ
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta # <--- BU EKSİKTİ
+from typing import List
 from passlib.context import CryptContext
+from jose import JWTError, jwt # <--- BU EKSİKTİ
+
+import models, schemas, database
+from database import engine, SessionLocal
+
+models.Base.metadata.create_all(bind=engine)
+
 app = FastAPI()
-# --- GÜVENLİK AYARLARI ---
-SECRET_KEY = "cok-gizli-bir-anahtar-buraya-rastgele-yazi-yaz" # Bunu kimse bilmemeli
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+from fastapi.middleware.cors import CORSMiddleware
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# --- YARDIMCI FONKSİYONLAR ---
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
-def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-# --- KULLANICIYI DOĞRULA (Bağımlılık) ---
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Giriş yapılamadı / Token geçersiz",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    return username
-
-# --- İZİNLER (CORS) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Herkese kapım açık
+    allow_origins=["*"], # Tüm adreslere izin ver (Geliştirme aşaması için)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# --- MODELLER ---
-class UserCreate(BaseModel):
-    username: str
-    password: str
 
-# --- MODELLER (Veri Kalıpları) ---
-class Stadium(BaseModel):
-    name: str  # Örn: Emirates Stadyumu
-    city: str  # Örn: Londra
-    lat: float  # Örn: 51.5549
-    lon: float  # Örn: -0.1084
-
-
-class Location(BaseModel):
-    stadium_id: int
-    name: str
-    category: str
-    lat: float  # X yerine Enlem
-    lon: float  # Y yerine Boylam
-    doluluk: int = Field(ge=0, le=100, description="0-100 arası yüzde")
-    VIP: bool
-
-
-# --- VERİTABANI KURULUMU ---
-def init_db():
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-
-    # 1. Tablo: STADYUMLAR (GPS Destekli)
-    c.execute("""
-              CREATE TABLE IF NOT EXISTS stadiums
-              (
-                  id
-                  INTEGER
-                  PRIMARY
-                  KEY
-                  AUTOINCREMENT,
-                  name
-                  TEXT,
-                  city
-                  TEXT,
-                  lat
-                  REAL,
-                  lon
-                  REAL
-              )
-              """)
-    c.execute("""
-              CREATE TABLE IF NOT EXISTS users
-              (
-                  id
-                  INTEGER
-                  PRIMARY
-                  KEY
-                  AUTOINCREMENT,
-                  username
-                  TEXT
-                  UNIQUE,
-                  hashed_password
-                  TEXT
-              )
-              """)
-
-    # 2. Tablo: MEKANLAR (GPS Destekli)
-    c.execute("""
-              CREATE TABLE IF NOT EXISTS locations
-              (
-                  id
-                  INTEGER
-                  PRIMARY
-                  KEY
-                  AUTOINCREMENT,
-                  stadium_id
-                  INTEGER,
-                  name
-                  TEXT,
-                  category
-                  TEXT,
-                  lat
-                  REAL,
-                  lon
-                  REAL,
-                  doluluk
-                  INTEGER,
-                  is_vip
-                  BOOLEAN
-              )
-              """)
-    conn.commit()
-    conn.close()
-
-
-# Uygulama başlarken tabloları kur (Eğer yoksa)
-init_db()
-
-# --- GÜVENLİK AYARLARI ---
-SECRET_KEY = "çokgizlisekretkey-bulamazlarbabaporşe-sürerbam" # Bunu kimse bilmemeli
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
+# Şifreleme Araçları
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# --- YARDIMCI FONKSİYONLAR ---
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
 
+# --- VERİTABANI BAĞLANTISI (Dependency) ---
+# Her fonksiyona "Al sana veritabanı anahtarı" diyen kısım.
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# --- YARDIMCI FONKSİYONLAR ---
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
+
+# --- AYARLAR (Sabitler) ---
+SECRET_KEY = "cok_gizli_bir_anahtar_bunu_degistir"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+
+# --- ŞİFRE DOĞRULAMA (Verify) ---
+# Kullanıcının girdiği şifre (plain) ile veritabanındaki (hashed) tutuyor mu?
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+# --- FEDAİ (Token Doğrulama) ---
+# Bu fonksiyon her korumalı sayfada çalışacak.
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    # Hata mesajını baştan hazırlayalım (Standart prosedür)
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Giriş yapılamadı (Token geçersiz veya süresi dolmuş)",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        # 1. Token şifresini çöz (Decode)
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+        # 2. İçindeki kullanıcı adını (sub) al
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+
+    except JWTError:
+        raise credentials_exception  # Token sahteyse veya süresi dolmuşsa hata ver
+
+    # 3. Veritabanında bu kullanıcıyı bul
+    user = db.query(models.User).filter(models.User.username == username).first()
+
+    if user is None:
+        raise credentials_exception
+
+    return user  # Kimliğini tespit ettik, içeri alıyoruz!
+
+# --- TOKEN OLUŞTURMA (Create Token) ---
+# Giriş yapan kullanıcıya verilecek "Giriş Kartı"nı basar.
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
+
+    # Süre belirle (Yoksa 15 dk ver)
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
+
+    # Bitiş süresini veriye ekle
     to_encode.update({"exp": expire})
+
+    # JWT kütüphanesi ile şifrele ve paketle
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# --- KULLANICIYI DOĞRULA (Bağımlılık) ---
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Giriş yapılamadı / Token geçersiz",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    return username
+# ==============================
+# BURASI SENİN "BİLMİYORUM" DEDİĞİN YER
+# ==============================
 
+@app.post("/register", response_model=schemas.UserResponse)
+def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    # 1. Önce veritabanına sor: Bu kullanıcı adı var mı?
+    # SQL Karşılığı: SELECT * FROM users WHERE username = '...'
+    db_user = db.query(models.User).filter(models.User.username == user.username).first()
 
-# --- 1. KAYIT OL (REGISTER) ---
-class UserCreate(BaseModel):
-    username: str
-    password: str
+    if db_user:
+        raise HTTPException(status_code=400, detail="Bu kullanıcı adı zaten alınmış!")
 
-
-# --- GİRİŞ YAP (LOGIN) ve TOKEN AL ---
-@app.post("/login")
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    # NOT: Bu "form_data", Swagger'daki o kilitli giriş kutusunu oluşturur.
-    # İçinde "form_data.username" ve "form_data.password" taşır.
-
-    # 1. Veritabanını Aç
-    conn = sqlite3.connect("database.db")
-    conn.row_factory = sqlite3.Row  # Sütun isimleriyle (user["username"] gibi) erişmek için
-    c = conn.cursor()
-
-    # 2. Kullanıcıyı Ara (RESEPSİYONİST BİLGİSAYARA BAKIYOR)
-    c.execute("SELECT * FROM users WHERE username = ?", (form_data.username,))
-    user = c.fetchone()
-    conn.close()
-
-    # 3. Kontrol Et (Kullanıcı yoksa VEYA şifre yanlışsa)
-    # verify_password: Bizim "Kıyma Makinesi" kontrolcüsü.
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Kullanıcı adı veya şifre hatalı! (Hacker mısın?)",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # 4. Her şey doğruysa TOKEN (Bilet) Bas
-    # Token'ın geçerlilik süresini ayarlıyoruz (30 dk)
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-
-    # Token'ı oluşturuyoruz (İçine kullanıcı adını gizliyoruz)
-    access_token = create_access_token(
-        data={"sub": user["username"]}, expires_delta=access_token_expires
-    )
-
-    # 5. Token'ı müşteriye ver
-    return {"access_token": access_token, "token_type": "bearer"}
-
-@app.post("/register")
-def register_user(user: UserCreate):
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-
-    # Şifreyi gizle (Hashle) - Asla düz kaydetme!
+    # 2. Şifreyi şifrele (Hashle)
     hashed_pw = get_password_hash(user.password)
 
-    try:
-        c.execute("INSERT INTO users (username, hashed_password) VALUES (?, ?)",
-                  (user.username, hashed_pw))
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Bu kullanıcı adı zaten var!")
+    # 3. Yeni Kullanıcıyı Hazırla (Python Nesnesi olarak)
+    # SQL Karşılığı: INSERT INTO users (...) VALUES (...) için hazırlık
+    new_user = models.User(
+        username=user.username,
+        email=user.email,
+        hashed_password=hashed_pw,
+        role="user"
+    )
 
-    conn.close()
-    return {"mesaj": "Kullanıcı oluşturuldu! Şimdi giriş yapabilirsiniz."}
+    # 4. Veritabanına Ekle
+    db.add(new_user)  # Listeye ekle
+    db.commit()  # Kaydet (Enter tuşuna basmak gibi)
+    db.refresh(new_user)  # ID'si oluştu, veriyi geri çekip new_user'ı güncelle
+
+    return new_user
 
 
-# --- 2. GİRİŞ YAP (LOGIN) -> TOKEN AL ---
+# --- GİRİŞ YAP (LOGIN) ---
 @app.post("/token")
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    conn = sqlite3.connect("database.db")
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # 1. ADIM: Kullanıcıyı veritabanında ara
+    user = db.query(models.User).filter(models.User.username == form_data.username).first()
 
-    # Kullanıcıyı bul
-    c.execute("SELECT * FROM users WHERE username = ?", (form_data.username,))
-    user = c.fetchone()
-    conn.close()
-
-    # Kullanıcı yoksa veya şifre yanlışsa
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
+    # 2. ADIM: Kullanıcı yoksa veya şifre yanlışsa HATA ver
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Kullanıcı adı veya şifre hatalı",
+            detail="Kullanıcı adı veya şifre yanlış",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Her şey doğruysa TOKEN üret ver
+    # 3. ADIM: Token (Giriş Kartı) oluştur
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user["username"]}, expires_delta=access_token_expires
+        data={"sub": user.username}, expires_delta=access_token_expires
     )
+
+    # 4. ADIM: Kartı teslim et
     return {"access_token": access_token, "token_type": "bearer"}
-@app.get("/")
-def read_root():
-    return {"Durum": "Global GPS Stadyum API Çalışıyor! 🌍"}
+@app.post("/stadium/create", response_model=schemas.StadiumResponse)
+def create_stadium(stadium: schemas.StadiumCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)):
+    new_stadium = models.Stadium(
+        name=stadium.name,
+        city=stadium.city,
+        lat=stadium.lat,
+        lon=stadium.lon,
+    )
+    db.add(new_stadium)
+    db.commit()
+    db.refresh(new_stadium)
+    return new_stadium
 
+@app.post("/location/create", response_model=schemas.LocationResponse)
+def create_location(location: schemas.LocationCreate,db: Session = Depends(get_db),current_user: models.User = Depends(get_current_user)):
+    stadium = db.query(models.Stadium).filter(models.Stadium.id == location.stadium_id).first()
+    if not stadium:
+        raise HTTPException(status_code=400, detail="Eşleşen Stadyum bulunmadı!")
 
-# --- 1. ADIM: Stadyum Ekleme ---
-@app.post("/stadiumsCreate")
-def create_stadium(stadium: Stadium,current_user: str = Depends(get_current_user)):
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-    c.execute("INSERT INTO stadiums (name, city, lat, lon) VALUES (?, ?, ?, ?)",
-              (stadium.name, stadium.city, stadium.lat, stadium.lon))
-    conn.commit()
-    stadium_id = c.lastrowid
-    conn.close()
-    return {"mesaj": f"{stadium.name} eklendi!", "stadium_id": stadium_id}
-
-
-# --- 2. ADIM: Mekan Ekleme ---
-@app.post("/locations/locationscreate")
-def create_location(location: Location,current_user: str = Depends(get_current_user)):
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-    c.execute("""
-              INSERT INTO locations
-                  (stadium_id, name, category, lat, lon, doluluk, is_vip)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-              """, (location.stadium_id, location.name, location.category, location.lat, location.lon, location.doluluk,
-                    location.VIP))
-    conn.commit()
-    conn.close()
-    return {"mesaj": f"{location.name} başarıyla eklendi!"}
-
-
-# --- 3. ADIM: GPS TABANLI EN YAKIN BULMA ---
-@app.get("/locations/locationsFind")
-def locationsFind(lat: float, lon: float, category: str, stadium_id: int):
-    conn = sqlite3.connect("database.db")
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-
-    # Kategori Filtreleme
-    if category == "Hepsi":
-        sql = "SELECT * FROM locations WHERE stadium_id = ?"
-        params = (stadium_id,)
-    else:
-        sql = "SELECT * FROM locations WHERE stadium_id = ? AND category = ?"
-        params = (stadium_id, category)
-
-    c.execute(sql, params)
-    mekanlar = c.fetchall()
-    conn.close()
-
-    if not mekanlar:
-        return {"error": "Bu kategoride mekan yok!"}
-
-    en_iyi_mekan = None
-    en_dusuk_puan = float('inf')
-
-    for mekan in mekanlar:
-        # Veri hatası varsa atla
-        if mekan["lat"] is None or mekan["lon"] is None:
-            continue
-
-        # --- GPS MESAFE HESABI (Metre Cinsinden) ---
-        # 1 Derece Enlem ≈ 111,000 metredir.
-        lat_fark = (mekan["lat"] - lat) * 111000
-        lon_fark = (mekan["lon"] - lon) * 111000
-
-        mesafe = (lat_fark ** 2 + lon_fark ** 2) ** 0.5
-
-        # Doluluk Cezası
-        doluluk = mekan["doluluk"] if mekan["doluluk"] is not None else 0
-
-        # Puanlama: Mesafe + (Doluluk * 2)
-        puan = mesafe + (doluluk * 2)
-
-        if puan < en_dusuk_puan:
-            en_dusuk_puan = puan
-            en_iyi_mekan = {
-                "ad": mekan["name"],
-                "lat": mekan["lat"],
-                "lon": mekan["lon"],
-                "mesafe": int(mesafe),
-                "doluluk": f"%{doluluk}",
-                "puan": int(puan)
-            }
-
-    return en_iyi_mekan
-
-
-# --- LISTELEME (Lat/Lon dahil) ---
-@app.get("/stadiums/full-map")
-def get_full_map():
-    conn = sqlite3.connect("database.db")
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-
-    # Stadyum ve Mekanları Birleştir
-    c.execute("""
-              SELECT s.name     as stadyum_adi,
-                     s.city     as sehir,
-                     l.name     as mekan_adi,
-                     l.category as tur,
-                     l.doluluk,
-                     l.lat,
-                     l.lon,
-                     l.is_vip
-              FROM stadiums s
-                       LEFT JOIN locations l ON s.id = l.stadium_id
-              """)
-
-    data = c.fetchall()
-    conn.close()
-
-    sonuc_listesi = []
-    for satir in data:
-        sonuc_listesi.append({
-            "stadyum": satir["stadyum_adi"],
-            "sehir": satir["sehir"],
-            "mekan": satir["mekan_adi"],
-            "tur": satir["tur"],
-            "lat": satir["lat"],
-            "lon": satir["lon"],
-            "doluluk_orani": f"%{satir['doluluk']}",
-            "ozel_giris": "EVET" if satir["is_vip"] else "HAYIR"
-        })
-
-    return {"tum_harita": sonuc_listesi}
-
-
-# --- SİLME FONKSİYONLARI ---
-@app.delete("/locations/{location_id}")
-def delete_location(location_id: int,current_user: str = Depends(get_current_user)):
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-    c.execute("SELECT * FROM locations WHERE id = ?", (location_id,))
-    kayit = c.fetchone()
-    if kayit is None:
-        conn.close()
-        return {"hata": "Mekan bulunamadı!"}
-
-    c.execute("DELETE FROM locations WHERE id = ?", (location_id,))
-    conn.commit()
-    conn.close()
-    return {"mesaj": "Mekan silindi! 🗑️"}
+    new_location = models.Location(
+    name=location.name,
+    category=location.category,
+    description=location.description,
+     stadium_id=location.stadium_id,
+     lat=location.lat,
+        lon=location.lon,
+    )
+    db.add(new_location)
+    db.commit()
+    db.refresh(new_location)
+    return new_location
+@app.get("/stadiums/{stadium_id}/locations", response_model=List[schemas.LocationResponse])
+def get_locations(stadium_id: int, db: Session = Depends(get_db)):
+    locations = db.query(models.Location).filter(models.Location.id == stadium_id).all()
+    return locations
+@app.get("/stadiums/List", response_model=List[schemas.StadiumResponse])
+def get_locations( db: Session = Depends(get_db)):
+    stadiums = db.query(models.Stadium).all()
+    return stadiums
+@app.put("/stadiums/{stadium_id}",response_model=schemas.StadiumResponse)
+def update_stadium(stadium_id: int,stadium_data=schemas.StadiumCreate,db: Session = Depends(get_db),current_user: models.User = Depends(get_current_user)):
+    db_stadium=db.query(models.Stadium).filter(models.Stadium.id == stadium_id).first()
+    if not db_stadium:
+        raise HTTPException(status_code=404, detail="Böyle bir stadyum yok!")
+    db_stadium.name = stadium_data.name
+    db_stadium.city = stadium_data.city
+    db_stadium.lat = stadium_data.lat
+    db_stadium.lon = stadium_data.lon
+    db.commit()
+    db.refresh(db_stadium)
+    return db_stadium
 
 
 @app.delete("/stadiums/{stadium_id}")
-def delete_stadium(stadium_id: int,current_user: str = Depends(get_current_user)):
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-    c.execute("SELECT * FROM stadiums WHERE id = ?", (stadium_id,))
-    kayit = c.fetchone()
-    if kayit is None:
-        conn.close()
-        return {"hata": "Stadyum bulunamadı!"}
+def delete_stadium(
+        stadium_id: int,
+        db: Session = Depends(database.get_db),
+        current_user: models.User = Depends(get_current_user)
+):
+    db_stadium = db.query(models.Stadium).filter(models.Stadium.id == stadium_id).first()
 
-    # Önce stadyuma bağlı mekanları sil, sonra stadyumu sil
-    c.execute("DELETE FROM locations WHERE stadium_id = ?", (stadium_id,))
-    c.execute("DELETE FROM stadiums WHERE id = ?", (stadium_id,))
-    conn.commit()
-    conn.close()
-    return {"mesaj": "Stadyum ve içindeki her şey silindi! 🗑️"}
+    if not db_stadium:
+        raise HTTPException(status_code=404, detail="Silinecek stadyum bulunamadı")
+
+    db.delete(db_stadium)
+    db.commit()
+    return {"mesaj": f"{stadium_id} ID'li stadyum başarıyla silindi."}
+
+@app.put("/location/{location_id}",response_model=schemas.LocationResponse)
+def uptade_location(location_id: int,location_data: schemas.LocationCreate,db: Session = Depends(get_db),get_current_user: models.User = Depends(get_current_user)):
+    location = db.query(models.Location).filter(models.Location.id == location_id).first()
+    if not location:
+        if not location:
+            raise HTTPException(status_code=404, detail="Böyle bir lokayon yok!")
+        location.name = location_data.name
+        location.description = location_data.description
+        location.stadium_id = location_data.stadium_id
+        location.category = location_data.category
+        location.lat = location_data.lat,
+        location.lon= location_data.lon,
+
+        db.commit()
+        db.refresh(location)
+        return location
+@app.delete("/location/{location_id}",response_model=schemas.LocationResponse)
+def delete_location(
+        location_id: int,db:Session=Depends(get_db),current_user: models.User = Depends(get_current_user)):
+    location_db = db.query(models.Location).filter(models.Location.id == location_id).first()
+    if not location_db:
+        if not location_db:
+            raise HTTPException(status_code=404, detail="Böyle bir lokasyon yok!")
+    db.delete(location_db)
+    db.commit()
+    db.refresh(location_db)
+    return location_db
+
+import math
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    R = 6371000 # Dünya yarıçapı (metre)
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lam = math.radians(lon2 - lon1)
+    a = math.sin(d_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(d_lam/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
 
-# --- GÜNCELLEME (UPDATE) ---
-@app.put("/locations/{location_id}")
-def update_location(location_id: int, location: Location,current_user: str = Depends(get_current_user)):
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
+@app.get("/stadiums/{stadium_id}/guide")
+def stadium_guide(
+        stadium_id: int,
+        user_lat: float,
+        user_lon: float,
+        category: str = None,  # WC, Yemek vb.
+        db: Session = Depends(get_db)
+):
+    # 1. Seçilen stadyumdaki mekanları getir
+    query = db.query(models.Location).filter(models.Location.stadium_id == stadium_id)
 
-    # Lat ve Lon güncelliyoruz
-    c.execute("""
-              UPDATE locations
-              SET name     = ?,
-                  category = ?,
-                  lat      = ?,
-                  lon      = ?,
-                  doluluk  = ?,
-                  is_vip   = ?
-              WHERE id = ?
-              """, (location.name, location.category, location.lat, location.lon, location.doluluk, location.VIP,
-                    location_id))
+    # 2. Eğer kategori seçildiyse (Yemek, WC vs.) sadece onları getir
+    if category:
+        query = query.filter(models.Location.category == category)
 
-    conn.commit()
-    conn.close()
-    return {"mesaj": f"Mekan (ID: {location_id}) güncellendi! ✨"}
+    locations = query.all()
 
+    # 3. Mesafe hesapla ve listeye ekle
+    guide_results = []
+    for loc in locations:
+        distance = calculate_distance(user_lat, user_lon, loc.lat, loc.lon)
+        guide_results.append({
+            "id": loc.id,
+            "name": loc.name,
+            "category": loc.category,
+            "description": loc.description,
+            "distance_meters": round(distance, 1),  # Örn: 45.2 metre
+            "lat": loc.lat,
+            "lon": loc.lon
+        })
 
-@app.put("/stadiums/{stadium_id}")
-def update_stadium(stadium_id: int, stadium: Stadium,current_user: str = Depends(get_current_user)):
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-    c.execute("UPDATE stadiums SET name = ?, city = ?, lat = ?, lon = ? WHERE id = ?",
-              (stadium.name, stadium.city, stadium.lat, stadium.lon, stadium_id))
-    conn.commit()
-    conn.close()
-    return {"mesaj": f"Stadyum güncellendi! 🏟️"}
+    # 4. En yakından en uzağa sırala (Müşteri önce en yakındaki WC'yi görsün)
+    return sorted(guide_results, key=lambda x: x["distance_meters"])

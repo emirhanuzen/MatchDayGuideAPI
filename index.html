@@ -9,106 +9,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
 
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Roboto', sans-serif;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            background-color: #f0f0f0;
-        }
-
-        /* --- ÜST HEADER (ARSENAL TEMASI) --- */
-        header {
-            background-color: #EF0107; /* Arsenal Kırmızısı */
-            color: white;
-            padding: 10px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-            z-index: 2000;
-        }
-
-        .logo-container {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .arsenal-logo {
-            height: 50px;
-            background: white;
-            border-radius: 50%;
-            padding: 2px;
-        }
-
-        h1 {
-            margin: 0;
-            font-size: 22px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        /* --- KONTROL PANELİ --- */
-        .controls {
-            background: #023474; /* Arsenal Mavisi */
-            color: white;
-            padding: 15px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-
-        label { font-weight: bold; }
-
-        select {
-            padding: 8px 15px;
-            border-radius: 20px;
-            border: none;
-            font-size: 16px;
-            outline: none;
-            cursor: pointer;
-            color: #023474;
-            font-weight: bold;
-        }
-
-        /* --- HARİTA ALANI --- */
-        #map {
-            flex-grow: 1; /* Kalan tüm alanı kapla */
-            width: 100%;
-            cursor: crosshair;
-        }
-
-        /* --- BİLGİ KUTUSU (POPUP SONUÇ) --- */
-        #bilgi-cubugu {
-            background: #9C824A; /* Arsenal Altın Rengi */
-            color: white;
-            text-align: center;
-            padding: 10px;
-            font-weight: bold;
-            display: none; /* Başlangıçta gizli */
-        }
-
-        /* --- HARİTA İKONLARI İÇİN STİL --- */
-        .custom-icon {
-            font-size: 24px;
-            text-align: center;
-            line-height: 30px;
-            background: white;
-            border-radius: 50%;
-            border: 2px solid #EF0107;
-            width: 30px !important;
-            height: 30px !important;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-        }
-
+        body { margin: 0; padding: 0; font-family: 'Roboto', sans-serif; display: flex; flex-direction: column; height: 100vh; background-color: #f0f0f0; }
+        header { background-color: #EF0107; color: white; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 6px rgba(0,0,0,0.2); z-index: 2000; }
+        .logo-container { display: flex; align-items: center; gap: 15px; }
+        .arsenal-logo { height: 50px; background: white; border-radius: 50%; padding: 2px; }
+        h1 { margin: 0; font-size: 22px; text-transform: uppercase; letter-spacing: 1px; }
+        .controls { background: #023474; color: white; padding: 15px; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; }
+        select { padding: 8px 15px; border-radius: 20px; border: none; font-size: 16px; outline: none; cursor: pointer; color: #023474; font-weight: bold; }
+        #map { flex-grow: 1; width: 100%; cursor: crosshair; }
+        #bilgi-cubugu { background: #9C824A; color: white; text-align: center; padding: 10px; font-weight: bold; display: none; }
+        .custom-icon { font-size: 24px; text-align: center; line-height: 30px; background: white; border-radius: 50%; border: 2px solid #EF0107; width: 30px !important; height: 30px !important; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
         .user-icon { border-color: #023474; background: #eef; }
         .target-icon { border-color: #27ae60; background: #eaffea; font-size: 28px; }
-
     </style>
 </head>
 <body>
@@ -126,11 +38,10 @@
     <div class="controls">
         <label>🔍 Ne Arıyorsun?</label>
         <select id="kategori">
-            <option value="Tuvalet">Tuvalet 🚻</option>
+            <option value="WC">Tuvalet 🚻</option>
             <option value="Yemek">Yemek / Büfe 🍔</option>
-            <option value="Kapı">Giriş Kapısı 🚪</option>
+            <option value="Kapi">Giriş Kapısı 🚪</option>
             <option value="Bar">Bar / Pub 🍺</option>
-            <option value="Mağaza">Mağaza 👕</option>
         </select>
         <span style="font-size: 14px; opacity: 0.8;">(Haritada bulunduğun yere tıkla)</span>
     </div>
@@ -143,9 +54,8 @@
 
     <script>
         // 1. HARİTAYI BAŞLAT
-        var map = L.map('map').setView([51.5549, -0.1084], 17); // Emirates Stadyumu
+        var map = L.map('map').setView([51.5549, -0.1084], 17);
 
-        // Koyu Tema Harita (Daha şık durur) veya Standart
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap'
         }).addTo(map);
@@ -154,42 +64,34 @@
         var targetMarker = null;
         var routeLine = null;
 
-        // 2. TÜM MEKANLARI YÜKLE (Sayfa açılınca)
+        // 2. SAYFA AÇILINCA TÜM MEKANLARI LİSTELE
         loadAllLocations();
 
         async function loadAllLocations() {
             try {
-                const res = await fetch("http://127.0.0.1:8000/stadiums/full-map");
-                const data = await res.json();
+                // Senin backend endpoint'in: /stadiums/{stadium_id}/locations
+                const res = await fetch("http://127.0.0.1:8000/stadiums/1/locations");
+                const locations = await res.json();
 
-                data.tum_harita.forEach(yer => {
+                locations.forEach(loc => {
                     let ikon = '📍';
-                    if(yer.tur === 'Tuvalet') ikon = '🚻';
-                    if(yer.tur === 'Yemek') ikon = '🍔';
-                    if(yer.tur === 'Kapı') ikon = '🚪';
-                    if(yer.tur === 'Bar') ikon = '🍺';
-                    if(yer.tur === 'Mağaza') ikon = '👕';
+                    if(loc.category === 'WC') ikon = '🚻';
+                    if(loc.category === 'Yemek') ikon = '🍔';
+                    if(loc.category === 'Kapi') ikon = '🚪';
+                    if(loc.category === 'Bar') ikon = '🍺';
 
-                    // Her mekanı haritaya ekle
-                    L.marker([yer.lat, yer.lon], {
-                        icon: L.divIcon({
-                            className: 'custom-icon',
-                            html: ikon,
-                            iconSize: [30, 30]
-                        })
-                    }).addTo(map).bindPopup(`
-                        <strong style="color:#EF0107">${yer.mekan}</strong><br>
-                        Doluluk: ${yer.doluluk_orani}
-                    `);
+                    L.marker([loc.lat, loc.lon], {
+                        icon: L.divIcon({ className: 'custom-icon', html: ikon })
+                    }).addTo(map).bindPopup(`<strong>${loc.name}</strong><br>${loc.description}`);
                 });
-            } catch(e) { console.error("Veri yüklenemedi:", e); }
+            } catch(e) { console.error("Veri yükleme hatası:", e); }
         }
 
-        // 3. TIKLAMA VE ROTA OLUŞTURMA
+        // 3. TIKLAMA VE REHBER (GUIDE) ÇALIŞTIRMA
         map.on('click', async function(e) {
             var lat = e.latlng.lat;
             var lon = e.latlng.lng;
-            var kategori = document.getElementById("kategori").value;
+            var kat = document.getElementById("kategori").value;
             var bilgiCubugu = document.getElementById("bilgi-cubugu");
 
             // Temizlik
@@ -197,50 +99,45 @@
             if (targetMarker) map.removeLayer(targetMarker);
             if (routeLine) map.removeLayer(routeLine);
 
-            // Kullanıcıyı İşaretle
+            // Kullanıcı İşaretçisi
             userMarker = L.marker([lat, lon], {
-                icon: L.divIcon({ className: 'custom-icon user-icon', html: '🏃', iconSize: [30,30] })
-            }).addTo(map).bindPopup("Sen Buradasın").openPopup();
+                icon: L.divIcon({ className: 'custom-icon user-icon', html: '🏃' })
+            }).addTo(map);
 
             bilgiCubugu.style.display = "block";
-            bilgiCubugu.innerHTML = "⏳ En uygun rota hesaplanıyor...";
-            bilgiCubugu.style.backgroundColor = "#9C824A"; // Altın rengi (Bekleme)
+            bilgiCubugu.innerHTML = "⏳ En yakın nokta hesaplanıyor...";
 
             try {
-                // API'ye Sor
-                const url = `http://127.0.0.1:8000/locations/locationsFind?lat=${lat}&lon=${lon}&category=${kategori}&stadium_id=1`;
+                // Senin Rehber Endpoint'in: /stadiums/{stadium_id}/guide?user_lat=...&user_lon=...&category=...
+                const url = `http://127.0.0.1:8000/stadiums/1/guide?user_lat=${lat}&user_lon=${lon}&category=${kat}`;
                 const res = await fetch(url);
                 const data = await res.json();
 
-                if (data.error) {
-                    bilgiCubugu.innerHTML = "❌ Üzgünüz, yakınlarda böyle bir yer bulunamadı.";
-                    bilgiCubugu.style.backgroundColor = "#333";
+                if (data.length === 0) {
+                    bilgiCubugu.innerHTML = "❌ Yakınlarda bu kategoride bir yer bulunamadı.";
                     return;
                 }
 
-                // Hedefi İşaretle
-                targetMarker = L.marker([data.lat, data.lon], {
-                    icon: L.divIcon({ className: 'custom-icon target-icon', html: '⭐', iconSize: [40,40] })
-                }).addTo(map).bindPopup(`
-                    <h3 style="margin:0; color:#EF0107">${data.ad}</h3>
-                    Mesafe: <b>${data.mesafe} metre</b><br>
-                    Doluluk: ${data.doluluk}
-                `).openPopup();
+                // API'den gelen ilk eleman (En yakını)
+                const enYakin = data[0];
 
-                // Çizgi Çiz
-                routeLine = L.polyline([[lat, lon], [data.lat, data.lon]], {
-                    color: '#EF0107', // Arsenal Kırmızısı Çizgi
+                // Hedefi İşaretle
+                targetMarker = L.marker([enYakin.lat, enYakin.lon], {
+                    icon: L.divIcon({ className: 'custom-icon target-icon', html: '⭐' })
+                }).addTo(map).bindPopup(`${enYakin.name} - ${enYakin.distance_meters}m`).openPopup();
+
+                // Rota Çizgisi
+                routeLine = L.polyline([[lat, lon], [enYakin.lat, enYakin.lon]], {
+                    color: '#EF0107',
                     weight: 5,
                     dashArray: '10, 10'
                 }).addTo(map);
 
-                // Bilgi Çubuğunu Güncelle
-                bilgiCubugu.innerHTML = `✅ GİT: <b>${data.ad}</b> (${data.mesafe}m) - Doluluk: ${data.doluluk}`;
-                bilgiCubugu.style.backgroundColor = "#27ae60"; // Yeşil (Başarılı)
+                bilgiCubugu.innerHTML = `✅ GİT: <b>${enYakin.name}</b> (${enYakin.distance_meters} metre)`;
+                bilgiCubugu.style.backgroundColor = "#27ae60";
 
             } catch (err) {
-                console.error(err);
-                bilgiCubugu.innerHTML = "⚠️ Bağlantı Hatası! Backend çalışıyor mu?";
+                bilgiCubugu.innerHTML = "⚠️ Bağlantı hatası! Backend'i kontrol et.";
                 bilgiCubugu.style.backgroundColor = "red";
             }
         });
